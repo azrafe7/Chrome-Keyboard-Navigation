@@ -5,9 +5,16 @@
      */
     if(!Element.prototype.addEventListener){var oListeners={};function runListeners(oEvent){if(!oEvent){oEvent=window.event}for(var lstId=0,elId=0,oEvtListeners=oListeners[oEvent.type];elId<oEvtListeners.aEls.length;elId++){if(oEvtListeners.aEls[elId]===this){for(lstId;lstId<oEvtListeners.aEvts[elId].length;lstId++){oEvtListeners.aEvts[elId][lstId].call(this,oEvent)}break}}}Element.prototype.addEventListener=function(sEventType,fListener){if(oListeners.hasOwnProperty(sEventType)){var oEvtListeners=oListeners[sEventType];for(var nElIdx=-1,elId=0;elId<oEvtListeners.aEls.length;elId++){if(oEvtListeners.aEls[elId]===this){nElIdx=elId;break}}if(nElIdx===-1){oEvtListeners.aEls.push(this);oEvtListeners.aEvts.push([fListener]);this["on"+sEventType]=runListeners}else{var aElListeners=oEvtListeners.aEvts[nElIdx];if(this["on"+sEventType]!==runListeners){aElListeners.splice(0);this["on"+sEventType]=runListeners}for(var lstId=0;lstId<aElListeners.length;lstId++){if(aElListeners[lstId]===fListener){return}}aElListeners.push(fListener)}}else{oListeners[sEventType]={aEls:[this],aEvts:[[fListener]]};this["on"+sEventType]=runListeners}};Element.prototype.removeEventListener=function(sEventType,fListener){if(!oListeners.hasOwnProperty(sEventType)){return}var oEvtListeners=oListeners[sEventType];for(var nElIdx=-1,elId=0;elId<oEvtListeners.aEls.length;elId++){if(oEvtListeners.aEls[elId]===this){nElIdx=elId;break}}if(nElIdx===-1){return}for(var lstId=0,aElListeners=oEvtListeners.aEvts[nElIdx];lstId<aElListeners.length;lstId++){if(aElListeners[lstId]===fListener){aElListeners.splice(lstId,1)}}}};
 
-    var next_page = false;
-    var prev_page = false;
+	// inited in start()
+    var next_page;
+    var prev_page;
+    var next_anchor;
+    var prev_anchor;
+	var lastLocation;
     var isPaused;
+
+	var focusMode = true;
+	var debugMode = true;
 
     var keycodes =
     {               // The keycodes for up down left and right movement.
@@ -83,7 +90,7 @@
 	            if(method2 !== null){
 	            	return method2.href;
 	            }
-	            return null;
+	            return false;
             },
             "prev_url" : function(){
             	var method1 = /page=([1-9]+[0-9]*)/g.exec(window.location.href);
@@ -95,7 +102,34 @@
 	            if(method2 !== null){
 	            	return method2.href;
 	            }
-	            return null;
+	            return false;
+            }
+        },
+        "ycombinator" :{
+            "url" : "news.ycombinator.com",
+            "next_url" : function(){
+            	var method1 = /p=([1-9]+[0-9]*)/g.exec(window.location.href);
+            	if(method1 !== null){
+	                var pgn = parseInt(/p=([1-9]+[0-9]*)/g.exec(window.location.href)[1], 10);
+	                return window.location.href.replace(/p=([1-9]+[0-9]*)/g, "p=" + (pgn + 1));
+	            }
+	            var method2 = document.getElementsByClassName('morelink');
+	            if(method2.length > 0){
+	            	return method2[0].href;
+	            }
+	            return false;
+            },
+            "prev_url" : function(){
+            	var method1 = /p=([1-9]+[0-9]*)/g.exec(window.location.href);
+            	if(method1 !== null){
+	                var pgn = parseInt(/p=([1-9]+[0-9]*)/g.exec(window.location.href)[1], 10);
+	                return window.location.href.replace(/p=([1-9]+[0-9]*)/g, "p=" + (pgn - 1));
+	            }
+	            var method2 = document.getElementById('pagnPrevLink');
+	            if(method2 !== null){
+	            	return method2.href;
+	            }
+	            return false;
             }
         },
         "apod" :{
@@ -187,10 +221,16 @@
             var id      = $(this).attr('id')    || '';
             var title   = $(this).attr('title') || '';
             var rel     = $(this).attr('rel')   || '';
-            var backRegex = /[^a-zA-Z0-9]?(back|prev|older)[^g]?/i;
-            var nextRegex = /[^a-zA-Z0-9]?(next|forward|newer)[s]?/i;
+            var backRegexes = [
+				/^(back|prev|older|previous)\b/i,
+				/^<$/i,
+			];
+            var nextRegexes = [
+				/^(next|forward|newer|>)\b/i,
+				/^>$/i,
+			];
             var i;
-            var vars = [backRegex];
+            var vars = backRegexes;
             for(i = 0; i < vars.length; i++){
                 if(
                     (text.search(vars[i])    != -1 ||
@@ -200,11 +240,12 @@
                     title.search(vars[i])    != -1) &&
                     prev_page === false
                 ) {
-                    prev_page = href;
+                    prev_anchor = this;
+					prev_page = href;
                     break;
                 }
             }
-            vars = [nextRegex];
+            vars = nextRegexes;
             for(i = 0; i < vars.length; i++){
                 if(
                     (text.search(vars[i])    != -1 ||
@@ -214,6 +255,7 @@
                     title.search(vars[i])    != -1) &&
                     next_page === false
                 ) {
+                    next_anchor = this;
                     next_page = href;
                     break;
                 }
@@ -267,19 +309,40 @@
         );
     }
 
+	function tryGoingTo(msg, where) {
+		doIfNotPaused(function() {
+			if (debugMode) console.log(msg, where);
+			if (focusMode) {
+				if (where.anchor) {
+					where.anchor.focus();
+				} else if (where.page) {
+					var ok = confirm('Going to ' + msg + ' page:\n' + where.page);
+					if (ok) window.location.href = where.page;
+				}
+			}
+			if (!debugMode && !focusMode) {
+				window.location.href = where.page;
+			}
+		});
+	}
+	
     function keypad(e){
-        if(checkIfInInput()) return;
-        if(e.keyCode == keycodes.left) {
+		
+		var altShift = (e.shiftKey && e.altKey);
+		var leftOrRight = (e.keyCode == keycodes.left || e.keyCode == keycodes.right);
+		
+        if (!(altShift && leftOrRight) || checkIfInInput()) return;
+		
+		// fix for ajax
+		if (lastLocation != window.location.toString()) start();
+		
+		if(e.keyCode == keycodes.left) {
             if(prev_page !== false){
-                doIfNotPaused(function() {
-                    window.location.href = prev_page;
-                });
+				tryGoingTo("prev", {anchor:prev_anchor, page:prev_page});
             }
         } else if(e.keyCode == keycodes.right) {
             if(next_page !== false){
-                doIfNotPaused(function() {
-                    window.location.href = next_page;
-                });
+				tryGoingTo("next", {anchor:next_anchor, page:next_page});
             }
         }
     }
@@ -312,7 +375,15 @@
     }
 
     function start() {
-        var specialCase = checkIfSpecialCase();
+		next_page = false;
+		prev_page = false;
+		next_anchor = false;
+		prev_anchor = false;
+		lastLocation = window.location.toString();
+		
+		if (debugMode) console.log("prev/next analyze!");
+		
+		var specialCase = checkIfSpecialCase();
         var test = true;
         if(specialCase === false){
             analyse();
@@ -331,11 +402,9 @@
                 }
             }
         }
-        if(test === true) {
-            setKeypad();
-        }
     }
 
     start();
-
+	setKeypad();
+	
 })();
