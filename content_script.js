@@ -222,11 +222,11 @@
             var title   = $(this).attr('title') || '';
             var rel     = $(this).attr('rel')   || '';
             var backRegexes = [
-				/^(back|prev|older|previous)\b/i,
+				/^(back|prev|older|previous)$/i,
 				/^<$/i,
 			];
             var nextRegexes = [
-				/^(next|forward|newer|>)\b/i,
+				/^(next|forward|newer|>)$/i,
 				/^>$/i,
 			];
             var i;
